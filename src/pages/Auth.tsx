@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,16 +15,27 @@ export default function Auth() {
   const [searchParams] = useSearchParams();
   const mode = searchParams.get('mode') || 'signup';
   const [isLogin, setIsLogin] = useState(mode === 'login');
+
+  useEffect(() => {
+    setIsLogin(mode === 'login');
+  }, [mode]);
   const [loading, setLoading] = useState(false);
-  
-  const { 
-    selectedRole, 
-    selectedDepartment, 
+
+  const {
+    selectedRole,
+    selectedDepartment,
     setSelectedDepartment,
-    login, 
-    signup, 
-    loginWithGoogle 
+    login,
+    signup,
+    loginWithGoogle
   } = useAuth();
+
+  useEffect(() => {
+    if (!selectedRole && !loading) {
+      toast.error('Please select a role first');
+      navigate('/select-role');
+    }
+  }, [selectedRole, loading, navigate]);
 
   const [formData, setFormData] = useState({
     email: '',
@@ -35,7 +46,7 @@ export default function Auth() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!selectedRole) {
       toast.error('Please select a role first');
       navigate('/select-role');
@@ -48,7 +59,7 @@ export default function Auth() {
     }
 
     setLoading(true);
-    
+
     try {
       if (isLogin) {
         await login(formData.email, formData.password);
@@ -273,7 +284,10 @@ export default function Auth() {
               <button
                 type="button"
                 className="text-primary font-medium hover:underline"
-                onClick={() => setIsLogin(!isLogin)}
+                onClick={() => {
+                  const newMode = !isLogin ? 'login' : 'signup';
+                  navigate(`?mode=${newMode}`);
+                }}
               >
                 {isLogin ? 'Sign Up' : 'Sign In'}
               </button>

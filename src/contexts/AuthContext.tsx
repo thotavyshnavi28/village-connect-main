@@ -40,7 +40,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [userData, setUserData] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>(() => {
+    return (localStorage.getItem('selectedRole') as UserRole) || null;
+  });
+
+  useEffect(() => {
+    if (selectedRole) {
+      localStorage.setItem('selectedRole', selectedRole);
+    } else {
+      localStorage.removeItem('selectedRole');
+    }
+  }, [selectedRole]);
+
   const [selectedDepartment, setSelectedDepartment] = useState<Department | null>(null);
 
   useEffect(() => {
