@@ -43,6 +43,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(() => {
     return (localStorage.getItem('selectedRole') as UserRole) || null;
   });
+  useEffect(() => {
+    console.log("DEBUG: Firebase Project ID:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
+    console.log("DEBUG: Current User:", currentUser?.uid);
+  }, [currentUser]);
 
   useEffect(() => {
     if (selectedRole) {

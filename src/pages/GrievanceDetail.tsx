@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, updateDoc, collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Grievance, Comment, STATUS_CONFIG, PRIORITY_CONFIG, GrievanceStatus } from '@/types';
+import { Grievance, Comment, STATUS_CONFIG, PRIORITY_CONFIG, GrievanceStatus, Priority } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ export default function GrievanceDetail() {
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState('');
   const [newStatus, setNewStatus] = useState<GrievanceStatus | ''>('');
+  const [newPriority, setNewPriority] = useState<Priority | ''>('');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -32,7 +33,7 @@ export default function GrievanceDetail() {
     const fetchGrievance = async () => {
       const docRef = doc(db, 'grievances', id);
       const docSnap = await getDoc(docRef);
-      
+
       if (docSnap.exists()) {
         const data = docSnap.data();
         setGrievance({
@@ -71,42 +72,76 @@ export default function GrievanceDetail() {
     return () => unsubscribe();
   }, [id]);
 
-  const canUpdateStatus = userData?.role === 'admin' || 
+  const canUpdateStatus = userData?.role === 'admin' ||
     (userData?.role === 'department' && grievance?.departments.includes(userData.department!));
 
-  const handleStatusUpdate = async () => {
-    if (!newStatus || !id || !grievance) return;
+  const handleUpdate = async () => {
+    if ((!newStatus && !newPriority) || !id || !grievance) return;
 
     setSubmitting(true);
     try {
       const updates: any = {
-        status: newStatus,
         updatedAt: serverTimestamp(),
       };
 
-      if (newStatus === 'resolved') {
-        updates.resolvedAt = serverTimestamp();
+      if (newStatus) {
+        updates.status = newStatus;
+        if (newStatus === 'resolved') {
+          updates.resolvedAt = serverTimestamp();
+        }
+      }
+
+      if (newPriority) {
+        updates.priority = newPriority;
       }
 
       await updateDoc(doc(db, 'grievances', id), updates);
 
-      // Add status update comment
+      // Add update comment
+      let commentText = '';
+      if (newStatus && newPriority) {
+        commentText = `Status updated to ${STATUS_CONFIG[newStatus].label} and Priority updated to ${PRIORITY_CONFIG[newPriority].label}`;
+      } else if (newStatus) {
+        commentText = `Status updated to ${STATUS_CONFIG[newStatus].label}`;
+      } else if (newPriority) {
+        commentText = `Priority updated to ${PRIORITY_CONFIG[newPriority].label}`;
+      }
+
       await addDoc(collection(db, 'comments'), {
         grievanceId: id,
         userId: currentUser?.uid,
         userName: userData?.displayName,
         userRole: userData?.role,
-        comment: `Status updated to ${STATUS_CONFIG[newStatus].label}`,
+        comment: commentText,
         isStatusUpdate: true,
-        newStatus: newStatus,
+        newStatus: newStatus || undefined,
         createdAt: serverTimestamp(),
       });
 
-      setGrievance({ ...grievance, status: newStatus });
+      // SIMULATION: Notify the user who submitted the grievance
+      if (grievance.submittedBy) {
+        await addDoc(collection(db, 'notifications'), {
+          userId: grievance.submittedBy,
+          title: 'Grievance Updated',
+          message: `Your grievance "${grievance.title}" has been updated. ${commentText}.`,
+          type: 'info',
+          read: false,
+          createdAt: serverTimestamp(),
+          relatedGrievanceId: id,
+          relatedGrievanceTitle: grievance.title,
+        });
+      }
+
+      setGrievance({
+        ...grievance,
+        ...(newStatus && { status: newStatus }),
+        ...(newPriority && { priority: newPriority })
+      });
       setNewStatus('');
-      toast.success('Status updated successfully');
+      setNewPriority('');
+      toast.success('Grievance updated successfully');
     } catch (error) {
-      toast.error('Failed to update status');
+      toast.error('Failed to update grievance');
     } finally {
       setSubmitting(false);
     }
@@ -260,10 +295,10 @@ export default function GrievanceDetail() {
               <CardTitle className="text-base">Update Status</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <Select value={newStatus} onValueChange={(v) => setNewStatus(v as GrievanceStatus)}>
                   <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Select new status" />
+                    <SelectValue placeholder="Update Status" />
                   </SelectTrigger>
                   <SelectContent>
                     {Object.entries(STATUS_CONFIG).map(([key, config]) => (
@@ -271,7 +306,19 @@ export default function GrievanceDetail() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Button onClick={handleStatusUpdate} disabled={!newStatus || submitting}>
+
+                <Select value={newPriority} onValueChange={(v) => setNewPriority(v as Priority)}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Update Priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(PRIORITY_CONFIG).map(([key, config]) => (
+                      <SelectItem key={key} value={key}>{config.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Button onClick={handleUpdate} disabled={(!newStatus && !newPriority) || submitting}>
                   {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                   Update
                 </Button>

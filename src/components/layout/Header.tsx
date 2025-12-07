@@ -1,4 +1,7 @@
-import { LogOut, Menu, Bell } from 'lucide-react';
+import { LogOut, Bell } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -15,6 +18,26 @@ import { useNavigate } from 'react-router-dom';
 export function Header() {
   const { userData, logout } = useAuth();
   const navigate = useNavigate();
+
+  // Notification Logic
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!userData?.uid) return;
+
+    // Listen for unread notifications
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', userData.uid),
+      where('read', '==', false)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setUnreadCount(snapshot.size);
+    });
+
+    return () => unsubscribe();
+  }, [userData?.uid]);
 
   const handleLogout = async () => {
     await logout();
@@ -45,7 +68,7 @@ export function Header() {
     <header className="sticky top-0 z-40 w-full border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60">
       <div className="container flex h-14 items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="gradient-hero rounded-lg p-2">
+          <div className="gradient-hero rounded-lg p-2" onClick={() => navigate('/community')} role="button">
             <span className="text-lg font-bold text-primary-foreground">VG</span>
           </div>
           <div className="hidden sm:block">
@@ -55,9 +78,11 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="relative">
+          <Button variant="ghost" size="icon" className="relative" onClick={() => navigate('/notifications')}>
             <Bell className="h-5 w-5" />
-            <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-destructive" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive ring-2 ring-card" />
+            )}
           </Button>
 
           <DropdownMenu>

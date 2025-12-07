@@ -1,13 +1,13 @@
 export type UserRole = 'citizen' | 'department' | 'admin';
 
-export type Department = 
+export type Department =
   | 'Municipal Cleanliness'
   | 'Electrical Department'
   | 'Water Department'
   | 'Roads & Infrastructure'
   | 'Health & Sanitation';
 
-export type GrievanceStatus = 
+export type GrievanceStatus =
   | 'submitted'
   | 'assigned'
   | 'in_progress'
@@ -57,6 +57,18 @@ export interface Comment {
   isStatusUpdate: boolean;
   newStatus?: GrievanceStatus;
   createdAt: Date;
+}
+
+export interface Notification {
+  id: string;
+  userId: string; // The recipient
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  read: boolean;
+  createdAt: Date;
+  relatedGrievanceId?: string;
+  relatedGrievanceTitle?: string;
 }
 
 export const DEPARTMENTS: Department[] = [

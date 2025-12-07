@@ -9,7 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, Users, FileText, Building2, TrendingUp, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 
+import { useNavigate } from 'react-router-dom';
+
 export default function AdminDashboard() {
+  const navigate = useNavigate();
   const [grievances, setGrievances] = useState<Grievance[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,7 +190,21 @@ export default function AdminDashboard() {
           <TabsContent value="departments" className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {deptStats.map((dept) => (
-                <Card key={dept.name}>
+                <Card
+                  key={dept.name}
+                  className="cursor-pointer hover:border-primary/50 transition-colors"
+                  onClick={() => {
+                    // We can use the navigate function from hook if available, or just use href for simplicity in this replace block if not
+                    // But since we are inside a component, let's use the router.
+                    // The AdminDashboard already has 'navigate' if we check? No, I need to check if it's imported.
+                    // It is not imported in the original file. I should add it.
+                    // For now, I will use window.location as a fallback or better, I will update imports in next step.
+                    // ACTUALLY, I'll use window.location.href is bad for SPA.
+                    // I will update the import first in a separate step or just use <Link> logic?
+                    // I'll stick to 'navigate' assuming I add it.
+                  }}
+                  onClick={() => navigate(`/admin/department/${encodeURIComponent(dept.name)}`)}
+                >
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Building2 className="w-4 h-4" />

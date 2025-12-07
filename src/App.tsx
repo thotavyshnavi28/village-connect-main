@@ -12,8 +12,11 @@ import Community from "./pages/Community";
 import SubmitGrievance from "./pages/SubmitGrievance";
 import GrievanceDetail from "./pages/GrievanceDetail";
 import MyGrievances from "./pages/MyGrievances";
+import Notifications from "./pages/Notifications";
 import DepartmentDashboard from "./pages/DepartmentDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import UsersList from "./pages/admin/UsersList";
+import DepartmentDetail from "./pages/admin/DepartmentDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,43 +32,67 @@ const App = () => (
             <Route path="/" element={<Landing />} />
             <Route path="/select-role" element={<RoleSelection />} />
             <Route path="/auth" element={<Auth />} />
-            
+
             <Route path="/community" element={
               <ProtectedRoute>
                 <Community />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/submit" element={
               <ProtectedRoute allowedRoles={['citizen']}>
                 <SubmitGrievance />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/grievance/:id" element={
               <ProtectedRoute>
                 <GrievanceDetail />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/my-grievances" element={
               <ProtectedRoute allowedRoles={['citizen']}>
                 <MyGrievances />
               </ProtectedRoute>
             } />
-            
+
+            <Route path="/my-grievances" element={
+              <ProtectedRoute allowedRoles={['citizen']}>
+                <MyGrievances />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/notifications" element={
+              <ProtectedRoute>
+                <Notifications />
+              </ProtectedRoute>
+            } />
+
             <Route path="/dashboard" element={
               <ProtectedRoute allowedRoles={['department']}>
                 <DepartmentDashboard />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/admin" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <AdminDashboard />
               </ProtectedRoute>
             } />
-            
+
+            <Route path="/admin/users" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <UsersList />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/admin/department/:name" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <DepartmentDetail />
+              </ProtectedRoute>
+            } />
+
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

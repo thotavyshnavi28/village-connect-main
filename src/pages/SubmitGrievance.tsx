@@ -10,16 +10,18 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowLeft, MapPin, Phone, Image, Loader2, AlertCircle } from 'lucide-react';
+// Select component replaced with native select due to update loop
+// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+// Checkbox replaced with native input
+// import { Checkbox } from '@/components/ui/checkbox';
+import { ArrowLeft, MapPin, Phone, Image, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function SubmitGrievance() {
   const navigate = useNavigate();
   const { userData, currentUser } = useAuth();
   const [loading, setLoading] = useState(false);
-  
+
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -41,7 +43,7 @@ export default function SubmitGrievance() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!currentUser || !userData) {
       toast.error('Please sign in to submit a grievance');
       return;
@@ -56,12 +58,12 @@ export default function SubmitGrievance() {
 
     try {
       const imageUrlArray = formData.imageUrls
-        .split('\n')
+        .split(/[\n,]/)
         .map((url) => url.trim())
         .filter((url) => url.length > 0)
         .slice(0, 5);
 
-      await addDoc(collection(db, 'grievances'), {
+      const docRef = await addDoc(collection(db, 'grievances'), {
         title: formData.title.trim(),
         description: formData.description.trim(),
         departments: formData.departments,
@@ -77,6 +79,22 @@ export default function SubmitGrievance() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      // SIMULATION: Create a notification for the user (to verify it works) 
+      // In a real app, this would go to 'admin' and 'department' users via Cloud Functions
+      await addDoc(collection(db, 'notifications'), {
+        userId: currentUser.uid, // Sending to self for demo/verification
+        title: 'Grievance Submitted',
+        message: `Your grievance "${formData.title}" has been successfully submitted.`,
+        type: 'success',
+        read: false,
+        createdAt: serverTimestamp(),
+        relatedGrievanceId: docRef.id,
+        relatedGrievanceTitle: formData.title,
+      });
+
+      // ALSO SIMULATE: Admin Notification (only if we knew the admin ID, but for now we skip or send to self as specific type)
+
 
       toast.success('Grievance submitted successfully!');
       navigate('/community');
@@ -137,21 +155,21 @@ export default function SubmitGrievance() {
                 <Label>Select Department(s) *</Label>
                 <div className="grid grid-cols-1 gap-2">
                   {DEPARTMENTS.map((dept) => (
-                    <div
+                    <label
                       key={dept}
-                      className={`flex items-center space-x-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-                        formData.departments.includes(dept)
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border hover:border-muted-foreground/30'
-                      }`}
-                      onClick={() => handleDepartmentToggle(dept)}
+                      className={`flex items-center space-x-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${formData.departments.includes(dept)
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-muted-foreground/30'
+                        }`}
                     >
-                      <Checkbox
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 text-primary border-primary rounded focus:ring-primary"
                         checked={formData.departments.includes(dept)}
-                        onCheckedChange={() => handleDepartmentToggle(dept)}
+                        onChange={() => handleDepartmentToggle(dept)}
                       />
                       <span className="text-sm font-medium">{dept}</span>
-                    </div>
+                    </label>
                   ))}
                 </div>
               </div>
@@ -159,24 +177,20 @@ export default function SubmitGrievance() {
               {/* Priority */}
               <div className="space-y-2">
                 <Label>Priority Level *</Label>
-                <Select
-                  value={formData.priority}
-                  onValueChange={(value) => setFormData({ ...formData, priority: value as Priority })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select priority" />
-                  </SelectTrigger>
-                  <SelectContent>
+                <div className="relative">
+                  <select
+                    className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
+                    value={formData.priority}
+                    onChange={(e) => setFormData({ ...formData, priority: e.target.value as Priority })}
+                  >
                     {Object.entries(PRIORITY_CONFIG).map(([key, config]) => (
-                      <SelectItem key={key} value={key}>
-                        <div className="flex items-center gap-2">
-                          {key === 'urgent' && <AlertCircle className="w-4 h-4 text-priority-urgent" />}
-                          {config.label}
-                        </div>
-                      </SelectItem>
+                      <option key={key} value={key}>
+                        {config.label}
+                      </option>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-2.5 h-4 w-4 opacity-50 pointer-events-none" />
+                </div>
               </div>
 
               {/* Location */}
