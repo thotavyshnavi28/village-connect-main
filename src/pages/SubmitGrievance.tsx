@@ -93,11 +93,23 @@ export default function SubmitGrievance() {
 
       try {
         const { analyzePriority } = await import('@/lib/gemini');
-        aiPriority = await analyzePriority(formData.title, formData.description, base64Images);
+
+        // Create a timeout promise that rejects after 8 seconds
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('AI analysis timed out')), 8000);
+        });
+
+        // Race the AI analysis against the timeout
+        aiPriority = await Promise.race([
+          analyzePriority(formData.title, formData.description, base64Images),
+          timeoutPromise
+        ]) as Priority;
+
         toast.success(`AI assigned priority: ${PRIORITY_CONFIG[aiPriority].label}`);
       } catch (aiError) {
-        console.error("AI Analysis failed, defaulting to medium:", aiError);
-        toast.warning("AI analysis failed. Priority set to 'Standard'.");
+        console.error("AI Analysis failed or timed out, defaulting to medium:", aiError);
+        toast.warning("AI analysis took too long. Proceeding with standard priority.");
+        // Fallback is already 'medium'
       }
 
       // 3. Upload images to Firebase Storage
