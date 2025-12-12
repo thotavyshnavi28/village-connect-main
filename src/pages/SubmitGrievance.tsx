@@ -9,18 +9,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-// Select component replaced with native select due to update loop
-// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-// Checkbox replaced with native input
-// import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowLeft, MapPin, Phone, Image, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { ArrowLeft, MapPin, Phone, Loader2, ChevronDown, Sparkles, X, Camera } from 'lucide-react';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '@/lib/firebase';
 import { toast } from 'sonner';
 
 export default function SubmitGrievance() {
   const navigate = useNavigate();
   const { userData, currentUser } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -28,9 +28,71 @@ export default function SubmitGrievance() {
     departments: [] as Department[],
     priority: 'medium' as Priority,
     location: '',
-    imageUrls: '',
     contactPhone: userData?.phoneNumber || '',
   });
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      if (files.length + selectedFiles.length > 5) {
+        toast.error('You can only upload up to 5 images');
+        return;
+      }
+
+      setSelectedFiles(prev => [...prev, ...files]);
+
+      // Create preview URLs
+      const newPreviews = files.map(file => URL.createObjectURL(file));
+      setPreviewUrls(prev => [...prev, ...newPreviews]);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    setPreviewUrls(prev => {
+      // Revoke the URL being removed to free memory
+      URL.revokeObjectURL(prev[index]);
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const handleAnalyzePriority = async () => {
+    if (!formData.title || !formData.description) {
+      toast.error('Please enter a title and description first');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      // Convert images to base64
+      const base64Images = await Promise.all(selectedFiles.map(file => {
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64String = reader.result as string;
+            // Remove data URL prefix (e.g., "data:image/jpeg;base64,")
+            const base64Content = base64String.split(',')[1];
+            resolve(base64Content);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }));
+
+      // Import dynamically to avoid issues if dependency isn't fully ready or for code splitting
+      const { analyzePriority } = await import('@/lib/gemini');
+      const priority = await analyzePriority(formData.title, formData.description, base64Images);
+
+      setFormData(prev => ({ ...prev, priority }));
+      toast.success(`Priority set to ${PRIORITY_CONFIG[priority].label} based on AI analysis`);
+    } catch (error) {
+      console.error('AI Analysis failed:', error);
+      toast.error('Failed to analyze priority. Please try manual selection.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const handleDepartmentToggle = (dept: Department) => {
     setFormData((prev) => ({
@@ -57,11 +119,13 @@ export default function SubmitGrievance() {
     setLoading(true);
 
     try {
-      const imageUrlArray = formData.imageUrls
-        .split(/[\n,]/)
-        .map((url) => url.trim())
-        .filter((url) => url.length > 0)
-        .slice(0, 5);
+      // Upload images to Firebase Storage
+      const uploadedImageUrls = await Promise.all(selectedFiles.map(async (file) => {
+        const timestamp = Date.now();
+        const storageRef = ref(storage, `grievances/${currentUser.uid}/${timestamp}_${file.name}`);
+        await uploadBytes(storageRef, file);
+        return await getDownloadURL(storageRef);
+      }));
 
       const docRef = await addDoc(collection(db, 'grievances'), {
         title: formData.title.trim(),
@@ -70,7 +134,7 @@ export default function SubmitGrievance() {
         status: 'submitted',
         priority: formData.priority,
         location: formData.location.trim(),
-        imageUrls: imageUrlArray,
+        imageUrls: uploadedImageUrls,
         submittedBy: currentUser.uid,
         submittedByName: userData.displayName,
         contactPhone: formData.contactPhone,
@@ -80,10 +144,9 @@ export default function SubmitGrievance() {
         updatedAt: serverTimestamp(),
       });
 
-      // SIMULATION: Create a notification for the user (to verify it works) 
-      // In a real app, this would go to 'admin' and 'department' users via Cloud Functions
+      // SIMULATION: Create a notification for the user
       await addDoc(collection(db, 'notifications'), {
-        userId: currentUser.uid, // Sending to self for demo/verification
+        userId: currentUser.uid,
         title: 'Grievance Submitted',
         message: `Your grievance "${formData.title}" has been successfully submitted.`,
         type: 'success',
@@ -92,9 +155,6 @@ export default function SubmitGrievance() {
         relatedGrievanceId: docRef.id,
         relatedGrievanceTitle: formData.title,
       });
-
-      // ALSO SIMULATE: Admin Notification (only if we knew the admin ID, but for now we skip or send to self as specific type)
-
 
       toast.success('Grievance submitted successfully!');
       navigate('/community');
@@ -176,7 +236,29 @@ export default function SubmitGrievance() {
 
               {/* Priority */}
               <div className="space-y-2">
-                <Label>Priority Level *</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Priority Level *</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-primary hover:text-primary hover:bg-primary/10"
+                    onClick={handleAnalyzePriority}
+                    disabled={isAnalyzing}
+                  >
+                    {isAnalyzing ? (
+                      <>
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3 h-3 mr-1" />
+                        Analyze with AI
+                      </>
+                    )}
+                  </Button>
+                </div>
                 <div className="relative">
                   <select
                     className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
@@ -227,22 +309,40 @@ export default function SubmitGrievance() {
                 </div>
               </div>
 
-              {/* Image URLs */}
+              {/* Image Upload */}
               <div className="space-y-2">
-                <Label htmlFor="imageUrls">Image URLs (optional)</Label>
-                <div className="relative">
-                  <Image className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
-                  <Textarea
-                    id="imageUrls"
-                    placeholder="Paste image URLs (one per line, max 5)"
-                    className="pl-10"
-                    rows={3}
-                    value={formData.imageUrls}
-                    onChange={(e) => setFormData({ ...formData, imageUrls: e.target.value })}
-                  />
+                <Label>Images (optional)</Label>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
+                  {previewUrls.map((url, index) => (
+                    <div key={index} className="relative aspect-square rounded-lg overflow-hidden border bg-muted">
+                      <img src={url} alt={`Preview ${index}`} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => removeFile(index)}
+                        className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+
+                  {selectedFiles.length < 5 && (
+                    <label className="flex flex-col items-center justify-center aspect-square rounded-lg border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 hover:bg-primary/5 cursor-pointer transition-all">
+                      <Camera className="w-8 h-8 text-muted-foreground mb-2" />
+                      <span className="text-xs text-muted-foreground text-center px-2">Tap to add photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={handleFileSelect}
+                      />
+                    </label>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Add up to 5 image URLs to help illustrate the issue
+                  Add up to 5 photos to help illustrate the issue. Images help AI analyze priority better.
                 </p>
               </div>
 
