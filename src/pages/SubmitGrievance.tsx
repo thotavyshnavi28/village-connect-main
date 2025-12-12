@@ -56,53 +56,6 @@ export default function SubmitGrievance() {
     });
   };
 
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const handleAnalyzePriority = async () => {
-    if (!formData.title || !formData.description) {
-      toast.error('Please enter a title and description first');
-      return;
-    }
-
-    setIsAnalyzing(true);
-    try {
-      // Convert images to base64
-      const base64Images = await Promise.all(selectedFiles.map(file => {
-        return new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const base64String = reader.result as string;
-            // Remove data URL prefix (e.g., "data:image/jpeg;base64,")
-            const base64Content = base64String.split(',')[1];
-            resolve(base64Content);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-      }));
-
-      // Import dynamically to avoid issues if dependency isn't fully ready or for code splitting
-      const { analyzePriority } = await import('@/lib/gemini');
-      const priority = await analyzePriority(formData.title, formData.description, base64Images);
-
-      setFormData(prev => ({ ...prev, priority }));
-      toast.success(`Priority set to ${PRIORITY_CONFIG[priority].label} based on AI analysis`);
-    } catch (error) {
-      console.error('AI Analysis failed:', error);
-      toast.error('Failed to analyze priority. Please try manual selection.');
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  const handleDepartmentToggle = (dept: Department) => {
-    setFormData((prev) => ({
-      ...prev,
-      departments: prev.departments.includes(dept)
-        ? prev.departments.filter((d) => d !== dept)
-        : [...prev.departments, dept],
-    }));
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -119,7 +72,35 @@ export default function SubmitGrievance() {
     setLoading(true);
 
     try {
-      // Upload images to Firebase Storage
+      // 1. Convert specific images to base64 for AI analysis
+      const base64Images = await Promise.all(selectedFiles.map(file => {
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64String = reader.result as string;
+            // Remove data URL prefix
+            const base64Content = base64String.split(',')[1];
+            resolve(base64Content);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }));
+
+      // 2. Analyze Priority with Gemini AI
+      toast.info("Analyzing grievance priority with AI...");
+      let aiPriority: Priority = 'medium';
+
+      try {
+        const { analyzePriority } = await import('@/lib/gemini');
+        aiPriority = await analyzePriority(formData.title, formData.description, base64Images);
+        toast.success(`AI assigned priority: ${PRIORITY_CONFIG[aiPriority].label}`);
+      } catch (aiError) {
+        console.error("AI Analysis failed, defaulting to medium:", aiError);
+        toast.warning("AI analysis failed. Priority set to 'Standard'.");
+      }
+
+      // 3. Upload images to Firebase Storage
       const uploadedImageUrls = await Promise.all(selectedFiles.map(async (file) => {
         const timestamp = Date.now();
         const storageRef = ref(storage, `grievances/${currentUser.uid}/${timestamp}_${file.name}`);
@@ -132,7 +113,7 @@ export default function SubmitGrievance() {
         description: formData.description.trim(),
         departments: formData.departments,
         status: 'submitted',
-        priority: formData.priority,
+        priority: aiPriority,
         location: formData.location.trim(),
         imageUrls: uploadedImageUrls,
         submittedBy: currentUser.uid,
@@ -164,6 +145,15 @@ export default function SubmitGrievance() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDepartmentToggle = (dept: Department) => {
+    setFormData((prev) => ({
+      ...prev,
+      departments: prev.departments.includes(dept)
+        ? prev.departments.filter((d) => d !== dept)
+        : [...prev.departments, dept],
+    }));
   };
 
   return (
@@ -233,49 +223,6 @@ export default function SubmitGrievance() {
                   ))}
                 </div>
               </div>
-
-              {/* Priority */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Priority Level *</Label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-xs text-primary hover:text-primary hover:bg-primary/10"
-                    onClick={handleAnalyzePriority}
-                    disabled={isAnalyzing}
-                  >
-                    {isAnalyzing ? (
-                      <>
-                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                        Analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-3 h-3 mr-1" />
-                        Analyze with AI
-                      </>
-                    )}
-                  </Button>
-                </div>
-                <div className="relative">
-                  <select
-                    className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
-                    value={formData.priority}
-                    onChange={(e) => setFormData({ ...formData, priority: e.target.value as Priority })}
-                  >
-                    {Object.entries(PRIORITY_CONFIG).map(([key, config]) => (
-                      <option key={key} value={key}>
-                        {config.label}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-3 top-2.5 h-4 w-4 opacity-50 pointer-events-none" />
-                </div>
-              </div>
-
-              {/* Location */}
               <div className="space-y-2">
                 <Label htmlFor="location">Location *</Label>
                 <div className="relative">
@@ -350,10 +297,10 @@ export default function SubmitGrievance() {
                 {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Submit Grievance
               </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    </AppLayout>
+            </form >
+          </CardContent >
+        </Card >
+      </div >
+    </AppLayout >
   );
 }
