@@ -193,16 +193,7 @@ export default function AdminDashboard() {
                 <Card
                   key={dept.name}
                   className="cursor-pointer hover:border-primary/50 transition-colors"
-                  onClick={() => {
-                    // We can use the navigate function from hook if available, or just use href for simplicity in this replace block if not
-                    // But since we are inside a component, let's use the router.
-                    // The AdminDashboard already has 'navigate' if we check? No, I need to check if it's imported.
-                    // It is not imported in the original file. I should add it.
-                    // For now, I will use window.location as a fallback or better, I will update imports in next step.
-                    // ACTUALLY, I'll use window.location.href is bad for SPA.
-                    // I will update the import first in a separate step or just use <Link> logic?
-                    // I'll stick to 'navigate' assuming I add it.
-                  }}
+
                   onClick={() => navigate(`/admin/department/${encodeURIComponent(dept.name)}`)}
                 >
                   <CardHeader className="pb-2">
