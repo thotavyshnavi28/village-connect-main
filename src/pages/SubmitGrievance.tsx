@@ -72,54 +72,70 @@ export default function SubmitGrievance() {
     setLoading(true);
 
     try {
-      // 1. Convert specific images to base64 for AI analysis
-      const base64Images = await Promise.all(selectedFiles.map(file => {
-        return new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const base64String = reader.result as string;
-            // Remove data URL prefix
-            const base64Content = base64String.split(',')[1];
-            resolve(base64Content);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-      }));
+      // 0. Import all needed utils and lib functions dynamically to save initial load if possible, 
+      // but here we just import normally at top, however for 'analyzePriority' we did dynamic import before. 
+      // We will stick to that pattern if desired, or just import everything.
+      const { analyzePriority } = await import('@/lib/gemini');
+      const { resizeImage } = await import('@/lib/imageUtils');
+      const { notifyGrievanceSubmission, createNotification } = await import('@/lib/notificationUtils');
 
-      // 2. Analyze Priority with Gemini AI
-      toast.info("Analyzing grievance priority with AI...");
-      let aiPriority: Priority = 'medium';
+      // 1. Resize Images (Performance Optimization) - Parallel
+      const resizedImages = await Promise.all(
+        selectedFiles.map(file => resizeImage(file, 1280)) // Resize to max 1280px width
+      );
 
-      try {
-        const { analyzePriority } = await import('@/lib/gemini');
+      // 2. Prepare Parallel Tasks: AI Analysis & Image Upload
 
-        // Create a timeout promise that rejects after 8 seconds
+      // Task A: Prepare Base64 for AI & Run Analysis
+      const aiAnalysisTask = (async () => {
+        // Convert to base64
+        const base64Images = await Promise.all(resizedImages.map(blob => {
+          return new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64String = reader.result as string;
+              const base64Content = base64String.split(',')[1];
+              resolve(base64Content);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        }));
+
+        toast.info("Analyzing grievance priority with AI...");
+
         const timeoutPromise = new Promise((_, reject) => {
           setTimeout(() => reject(new Error('AI analysis timed out')), 8000);
         });
 
-        // Race the AI analysis against the timeout
-        aiPriority = await Promise.race([
-          analyzePriority(formData.title, formData.description, base64Images),
-          timeoutPromise
-        ]) as Priority;
+        try {
+          return await Promise.race([
+            analyzePriority(formData.title, formData.description, base64Images),
+            timeoutPromise
+          ]) as Priority;
+        } catch (error) {
+          console.warn("AI Analysis failed/timed out:", error);
+          return 'medium'; // Fallback
+        }
+      })();
 
-        toast.success(`AI assigned priority: ${PRIORITY_CONFIG[aiPriority].label}`);
-      } catch (aiError) {
-        console.error("AI Analysis failed or timed out, defaulting to medium:", aiError);
-        toast.warning("AI analysis took too long. Proceeding with standard priority.");
-        // Fallback is already 'medium'
-      }
-
-      // 3. Upload images to Firebase Storage
-      const uploadedImageUrls = await Promise.all(selectedFiles.map(async (file) => {
+      // Task B: Upload Images to Firebase (Parallel with AI)
+      const uploadTask = Promise.all(resizedImages.map(async (blob, index) => {
+        const originalName = selectedFiles[index].name;
         const timestamp = Date.now();
-        const storageRef = ref(storage, `grievances/${currentUser.uid}/${timestamp}_${file.name}`);
-        await uploadBytes(storageRef, file);
+        const storageRef = ref(storage, `grievances/${currentUser.uid}/${timestamp}_${originalName}`);
+        await uploadBytes(storageRef, blob);
         return await getDownloadURL(storageRef);
       }));
 
+      // 3. Execute Parallel Tasks
+      const [aiPriority, uploadedImageUrls] = await Promise.all([aiAnalysisTask, uploadTask]);
+
+      if (aiPriority !== 'medium') {
+        toast.success(`AI assigned priority: ${PRIORITY_CONFIG[aiPriority].label}`);
+      }
+
+      // 4. Create Grievance Document
       const docRef = await addDoc(collection(db, 'grievances'), {
         title: formData.title.trim(),
         description: formData.description.trim(),
@@ -137,17 +153,26 @@ export default function SubmitGrievance() {
         updatedAt: serverTimestamp(),
       });
 
-      // SIMULATION: Create a notification for the user
-      await addDoc(collection(db, 'notifications'), {
-        userId: currentUser.uid,
-        title: 'Grievance Submitted',
-        message: `Your grievance "${formData.title}" has been successfully submitted.`,
-        type: 'success',
-        read: false,
-        createdAt: serverTimestamp(),
-        relatedGrievanceId: docRef.id,
-        relatedGrievanceTitle: formData.title,
-      });
+      // 5. Send Notifications (Parallel)
+      // Notify the submitter (Citizen)
+      const notifyUserPromise = createNotification(
+        currentUser.uid,
+        'Grievance Submitted',
+        `Your grievance "${formData.title}" has been successfully submitted.`,
+        'success',
+        docRef.id,
+        formData.title
+      );
+
+      // Notify Admins & Departments
+      const notifyOfficialsPromise = notifyGrievanceSubmission(
+        docRef.id,
+        formData.title,
+        formData.departments,
+        userData.displayName
+      );
+
+      await Promise.all([notifyUserPromise, notifyOfficialsPromise]);
 
       toast.success('Grievance submitted successfully!');
       navigate('/community');

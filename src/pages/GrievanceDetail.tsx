@@ -118,18 +118,20 @@ export default function GrievanceDetail() {
         createdAt: serverTimestamp(),
       });
 
-      // SIMULATION: Notify the user who submitted the grievance
+      // Notify the user who submitted the grievance
       if (grievance.submittedBy) {
-        await addDoc(collection(db, 'notifications'), {
-          userId: grievance.submittedBy,
-          title: 'Grievance Updated',
-          message: `Your grievance "${grievance.title}" has been updated. ${commentText}.`,
-          type: 'info',
-          read: false,
-          createdAt: serverTimestamp(),
-          relatedGrievanceId: id,
-          relatedGrievanceTitle: grievance.title,
-        });
+        try {
+          const { notifyStatusUpdate } = await import('@/lib/notificationUtils');
+          await notifyStatusUpdate(
+            grievance.submittedBy,
+            id,
+            grievance.title,
+            newStatus || undefined,
+            newPriority || undefined
+          );
+        } catch (err) {
+          console.error("Failed to send notification:", err);
+        }
       }
 
       setGrievance({
